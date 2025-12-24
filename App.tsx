@@ -129,7 +129,6 @@ const AIDashboardInsights = ({ stats, settings, branches }: any) => {
   const generateInsight = async () => {
     setLoading(true);
     try {
-      // Fix: Initializing GoogleGenAI according to guidelines.
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `
         As an Enterprise Restaurant Consultant, analyze this POS data and provide 3 brief, high-impact bullet points for business improvement:
@@ -348,7 +347,9 @@ const DashboardView = ({ orders, settings, branches, currentUser }: any) => {
 
   const stats = useMemo(() => {
     const filtered = filterOrdersByCriteria(orders, filterBranchId, filterFrequency, startDate, endDate);
-    const totalSales = filtered.reduce((acc: number, o: any) => acc + o.total, 0);
+    const totalSales = filtered
+      .filter((o: any) => o.status !== OrderStatus.CANCELLED)
+      .reduce((acc: number, o: any) => acc + o.total, 0);
     const totalOrders = filtered.length;
     const uniqueCustomers = new Set(filtered.map((o: any) => o.customerPhone).filter(Boolean)).size;
     
@@ -359,7 +360,8 @@ const DashboardView = ({ orders, settings, branches, currentUser }: any) => {
     }).reverse();
 
     const chartData = last7Days.map(date => {
-      const dayOrders = filtered.filter((o: any) => new Date(o.createdAt).toLocaleDateString() === date);
+      const dayOrders = filtered
+        .filter((o: any) => o.status !== OrderStatus.CANCELLED && new Date(o.createdAt).toLocaleDateString() === date);
       return {
         date,
         sales: dayOrders.reduce((acc: number, o: any) => acc + o.total, 0)
@@ -445,14 +447,14 @@ const DashboardView = ({ orders, settings, branches, currentUser }: any) => {
           <div className="space-y-6 flex-1 overflow-y-auto no-scrollbar">
             {stats.filtered.slice(0, 15).map((order: any) => (
               <div key={order.id} className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-blue-600 font-black text-xs shadow-inner">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs shadow-inner ${order.status === OrderStatus.CANCELLED ? 'bg-rose-50 text-rose-300' : 'bg-gray-50 text-blue-600'}`}>
                   {order.customerName?.charAt(0) || 'G'}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-black text-gray-800 truncate uppercase tracking-tight">{order.customerName || 'Walk-in Patron'}</p>
+                  <p className={`text-[10px] font-black truncate uppercase tracking-tight ${order.status === OrderStatus.CANCELLED ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{order.customerName || 'Walk-in Patron'}</p>
                   <p className="text-[8px] text-gray-400 font-bold uppercase">{new Date(order.createdAt).toLocaleTimeString()}</p>
                 </div>
-                <div className="text-[10px] font-black text-gray-900">
+                <div className={`text-[10px] font-black ${order.status === OrderStatus.CANCELLED ? 'text-rose-400 line-through' : 'text-gray-900'}`}>
                   {settings.currencySymbol}{order.total.toFixed(0)}
                 </div>
               </div>
@@ -603,6 +605,7 @@ const POSView = ({ branch, settings, addOrder, categories, menuItems, allAddons,
   const [discountType, setDiscountType] = useState<'FIXED' | 'PERCENT'>('FIXED');
   const [discountValue, setDiscountValue] = useState(settings.defaultDiscount || 0);
   const [vatPercent, setVatPercent] = useState(settings.vatPercentage || 0);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.CASH);
 
   const customersMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -685,6 +688,7 @@ const POSView = ({ branch, settings, addOrder, categories, menuItems, allAddons,
       discount: discountAmount,
       total,
       status: OrderStatus.PENDING,
+      paymentMethod,
       createdAt: Date.now(),
       userId: 'admin-1',
       customerName: customerInfo.name,
@@ -695,6 +699,7 @@ const POSView = ({ branch, settings, addOrder, categories, menuItems, allAddons,
     setCustomerInfo({ name: '', phone: '' });
     setDiscountValue(settings.defaultDiscount || 0);
     setVatPercent(settings.vatPercentage || 0);
+    setPaymentMethod(PaymentMethod.CASH);
   };
 
   return (
@@ -706,9 +711,9 @@ const POSView = ({ branch, settings, addOrder, categories, menuItems, allAddons,
             <input type="text" placeholder="Search catalog..." className="bg-transparent outline-none w-full text-xs font-bold" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}/>
           </div>
           <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-            <button onClick={() => setSelectedCategory('All')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black border transition-all whitespace-nowrap active:scale-95 ${selectedCategory === 'All' ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'}`}>All Items</button>
+            <button onClick={() => setSelectedCategory('All')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black border transition-all whitespace-nowrap active:scale-95 ${selectedCategory === 'All' ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-500 border border-gray-100 hover:bg-gray-50'}`}>All Items</button>
             {categories.map((cat: any) => (
-              <button key={cat.id} onClick={() => setSelectedCategory(cat.name)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black border transition-all whitespace-nowrap active:scale-95 ${selectedCategory === cat.name ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-500 border-gray-100 hover:bg-gray-50'}`}>{cat.name}</button>
+              <button key={cat.id} onClick={() => setSelectedCategory(cat.name)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black border transition-all whitespace-nowrap active:scale-95 ${selectedCategory === cat.name ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-500 border border-gray-100 hover:bg-gray-50'}`}>{cat.name}</button>
             ))}
           </div>
         </div>
@@ -794,14 +799,14 @@ const POSView = ({ branch, settings, addOrder, categories, menuItems, allAddons,
       {isCheckoutModalOpen && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/70 backdrop-blur-md" onClick={() => setIsCheckoutModalOpen(false)} />
-          <div className="bg-white rounded-[2.5rem] w-full max-md relative z-10 p-6 md:p-8 space-y-6 shadow-2xl animate-in zoom-in max-h-[95vh] overflow-y-auto no-scrollbar border border-gray-100">
+          <div className="bg-white rounded-[2.5rem] w-full max-lg relative z-10 p-6 md:p-8 space-y-6 shadow-2xl animate-in zoom-in max-h-[95vh] overflow-y-auto no-scrollbar border border-gray-100">
              <div className="flex justify-between items-center">
                <h3 className="text-xl font-black text-gray-900 tracking-tight leading-none uppercase tracking-widest">Order Settlement</h3>
                <button onClick={() => setIsCheckoutModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full transition-all"><X size={20}/></button>
              </div>
              
              <div className="space-y-4">
-               <div className="grid grid-cols-1 gap-3">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                  <div className="space-y-1.5">
                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Patron Number</label>
                    <div className="flex items-center bg-gray-50 rounded-xl px-3 py-0.5 border border-gray-100 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
@@ -815,6 +820,25 @@ const POSView = ({ branch, settings, addOrder, categories, menuItems, allAddons,
                      <UserCircle size={14} className="text-gray-400 mr-2"/>
                      <input type="text" className="w-full py-2 bg-transparent outline-none font-bold text-xs" value={customerInfo.name} onChange={e => setCustomerInfo({...customerInfo, name: e.target.value})} placeholder="Guest Name"/>
                    </div>
+                 </div>
+               </div>
+
+               <div className="space-y-2">
+                 <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest ml-1">Payment Method</label>
+                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                   {Object.values(PaymentMethod).map((m) => (
+                     <button
+                       key={m}
+                       onClick={() => setPaymentMethod(m)}
+                       className={`py-2 px-3 rounded-xl font-black text-[9px] uppercase tracking-widest border transition-all flex items-center justify-center gap-1.5 ${paymentMethod === m ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-500 border border-gray-100 hover:bg-gray-50'}`}
+                     >
+                       {m === PaymentMethod.CASH && <DollarSign size={12}/>}
+                       {m === PaymentMethod.BKASH && <Smartphone size={12}/>}
+                       {m === PaymentMethod.NAGAD && <HandCoins size={12}/>}
+                       {m === PaymentMethod.CARD && <CreditCard size={12}/>}
+                       {m}
+                     </button>
+                   ))}
                  </div>
                </div>
 
@@ -897,7 +921,7 @@ const AddonSelector = ({ item, availableAddons, onConfirm, onCancel, settings }:
 };
 
 // --- Module: Order History (Responsive & CRUD) ---
-const OrderHistoryView = ({ orders, setOrders, settings, branches }: any) => {
+const OrderHistoryView = ({ orders, setOrders, settings, branches, setAccountingEntries }: any) => {
   const [filter, setFilter] = useState('ALL');
   const [filterBranchId, setFilterBranchId] = useState('ALL');
   const [filterFrequency, setFilterFrequency] = useState('DAILY');
@@ -912,6 +936,22 @@ const OrderHistoryView = ({ orders, setOrders, settings, branches }: any) => {
   }, [orders, filter, filterBranchId, filterFrequency, startDate, endDate]);
 
   const updateStatus = (id: string, newStatus: OrderStatus) => {
+    const oldOrder = orders.find((o: Order) => o.id === id);
+    if (!oldOrder) return;
+
+    if (newStatus === OrderStatus.CANCELLED && oldOrder.status !== OrderStatus.CANCELLED) {
+      const reversalEntry: AccountingEntry = {
+        id: `REV-${Date.now()}`,
+        date: Date.now(),
+        description: `Cancellation Reversal - Order #${id.split('-')[1]}`,
+        type: 'EXPENSE',
+        amount: oldOrder.total,
+        category: 'Sales Return',
+        branchId: oldOrder.branchId
+      };
+      setAccountingEntries((prev: AccountingEntry[]) => [reversalEntry, ...prev]);
+    }
+
     setOrders(orders.map((o: Order) => o.id === id ? { ...o, status: newStatus } : o));
     if (selectedOrder?.id === id) {
       setSelectedOrder({ ...selectedOrder, status: newStatus });
@@ -988,16 +1028,16 @@ const OrderHistoryView = ({ orders, setOrders, settings, branches }: any) => {
                 <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest leading-none">#{order.id.split('-')[1]}</span>
                 <span className="text-[8px] font-bold text-gray-400 mt-1 uppercase flex items-center gap-1 leading-none"><Clock size={10}/> {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
-              <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest ${order.status === 'PENDING' ? 'bg-amber-100 text-amber-600' : order.status === 'READY' ? 'bg-blue-100 text-blue-600' : 'bg-emerald-100 text-emerald-600'}`}>{order.status}</span>
+              <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest ${order.status === 'PENDING' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>{order.status}</span>
             </div>
             <div className="flex items-center gap-3 py-2 border-y border-gray-50">
               <div className="w-10 h-10 rounded-[1rem] bg-gray-50 flex items-center justify-center text-blue-600 font-black shadow-inner shrink-0 text-sm">{order.customerName?.charAt(0) || 'G'}</div>
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-black text-gray-800 truncate leading-tight">{order.customerName || 'Walk-in Patron'}</p>
+                <p className={`text-[11px] font-black truncate leading-tight ${order.status === OrderStatus.CANCELLED ? 'text-gray-400 line-through' : 'text-gray-800'}`}>{order.customerName || 'Walk-in Patron'}</p>
                 <p className="text-[9px] text-gray-400 font-bold leading-tight">{order.customerPhone || 'Anonymous'}</p>
               </div>
               <div className="text-right">
-                <p className="text-xs font-black text-gray-900 leading-none">{settings.currencySymbol}{order.total.toFixed(0)}</p>
+                <p className={`text-xs font-black leading-none ${order.status === OrderStatus.CANCELLED ? 'text-rose-400 line-through' : 'text-gray-900'}`}>{settings.currencySymbol}{order.total.toFixed(0)}</p>
                 <p className="text-[7px] text-gray-400 font-bold mt-1 uppercase tracking-tighter">{order.items.length} items</p>
               </div>
             </div>
@@ -1017,6 +1057,7 @@ const OrderHistoryView = ({ orders, setOrders, settings, branches }: any) => {
                 <div className="separator"></div>
                 <p className="flex"><span>ID:</span> <span>#{order.id.split('-')[1]}</span></p>
                 <p className="flex"><span>Date:</span> <span>{new Date(order.createdAt).toLocaleDateString()}</span></p>
+                <p className="flex"><span>Payment:</span> <span>{order.paymentMethod || 'CASH'}</span></p>
                 <div className="separator"></div>
                 {order.items.map((item: any) => (
                   <div key={item.id} className="flex mt-1">
@@ -1037,7 +1078,7 @@ const OrderHistoryView = ({ orders, setOrders, settings, branches }: any) => {
       {selectedOrder && (
         <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSelectedOrder(null)} />
-          <div className="bg-white rounded-[2.5rem] w-full max-w-lg relative z-10 p-6 md:p-8 space-y-6 shadow-2xl animate-in zoom-in border border-gray-100 max-h-[90vh] overflow-y-auto no-scrollbar">
+          <div className="bg-white rounded-[2.5rem] w-full max-lg relative z-10 p-6 md:p-8 space-y-6 shadow-2xl animate-in zoom-in border border-gray-100 max-h-[90vh] overflow-y-auto no-scrollbar">
              <div className="flex justify-between items-center">
                <div>
                  <h3 className="text-xl font-black uppercase tracking-widest text-gray-900 leading-none">Order Invoice</h3>
@@ -1045,7 +1086,6 @@ const OrderHistoryView = ({ orders, setOrders, settings, branches }: any) => {
                </div>
                <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-gray-100 rounded-full transition-all shrink-0"><X size={24}/></button>
              </div>
-
              <div className="grid grid-cols-2 gap-4 py-4 border-y border-gray-100">
                <div>
                  <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Customer Details</p>
@@ -1056,7 +1096,6 @@ const OrderHistoryView = ({ orders, setOrders, settings, branches }: any) => {
                  <p className="text-xs font-black text-blue-600 uppercase">{branches.find((b:any)=>b.id === selectedOrder.branchId)?.name || 'Main Branch'}</p>
                </div>
              </div>
-
              <div className="space-y-3">
                <div className="space-y-2">
                  {selectedOrder.items.map((item: OrderItem) => (
@@ -1069,12 +1108,10 @@ const OrderHistoryView = ({ orders, setOrders, settings, branches }: any) => {
                  ))}
                </div>
              </div>
-
              <div className="p-5 bg-gray-900 rounded-[2rem] space-y-2.5 shadow-xl">
                <div className="flex justify-between text-[10px] font-bold text-gray-500 uppercase tracking-widest"><span>Subtotal</span><span className="text-gray-300">{settings.currencySymbol}{selectedOrder.subtotal.toLocaleString()}</span></div>
                <div className="flex justify-between text-xl font-black text-white uppercase tracking-tight pt-2.5 border-t border-white/10 mt-1"><span>Payable</span><span className="text-blue-400">{settings.currencySymbol}{selectedOrder.total.toFixed(0)}</span></div>
              </div>
-
              <div className="space-y-3">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   {Object.values(OrderStatus).map(status => (
@@ -1082,7 +1119,6 @@ const OrderHistoryView = ({ orders, setOrders, settings, branches }: any) => {
                   ))}
                 </div>
              </div>
-
              <div className="grid grid-cols-2 gap-3 pt-2">
                <button onClick={() => handlePrint(selectedOrder)} className="flex items-center justify-center gap-2 py-4 bg-gray-100 text-gray-900 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-gray-200 transition-all active:scale-95">
                  <Printer size={16}/> Print Bill
@@ -1146,7 +1182,6 @@ const InventoryView = ({ settings, stockItems, setStockItems }: any) => {
           </div>
         ))}
       </div>
-
       {modal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setModal(null)} />
@@ -1170,9 +1205,9 @@ const InventoryView = ({ settings, stockItems, setStockItems }: any) => {
 };
 
 // --- Module: Accounting View ---
-const AccountingView = ({ settings, entries, setEntries, withdrawalRequests }: any) => {
+const AccountingView = ({ settings, entries, setEntries, withdrawalRequests, setWithdrawalRequests, staff }: any) => {
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'LOGS' | 'SUMMARY'>('LOGS');
+  const [activeTab, setActiveTab] = useState<'LOGS' | 'SUMMARY' | 'REQUESTS'>('LOGS');
 
   const addVoucher = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1188,6 +1223,73 @@ const AccountingView = ({ settings, entries, setEntries, withdrawalRequests }: a
     };
     setEntries([newEntry, ...entries]);
     setIsAddOpen(false);
+  };
+
+  const approveRequest = (req: WithdrawalRequest) => {
+    const newEntry: AccountingEntry = {
+      id: `PAY-${Date.now()}`,
+      date: Date.now(),
+      description: `Payment Fulfillment - ${req.userName} (${req.reason})`,
+      type: 'EXPENSE',
+      amount: req.amount,
+      category: 'Payroll / Staff Advance',
+      branchId: 'b1'
+    };
+    setEntries([newEntry, ...entries]);
+    setWithdrawalRequests(withdrawalRequests.map((r: WithdrawalRequest) => 
+      r.id === req.id ? { ...r, status: 'APPROVED' } : r
+    ));
+  };
+
+  const rejectRequest = (reqId: string) => {
+    setWithdrawalRequests(withdrawalRequests.map((r: WithdrawalRequest) => 
+      r.id === reqId ? { ...r, status: 'REJECTED' } : r
+    ));
+  };
+
+  const generateSalaryRequests = () => {
+    const now = new Date();
+    const month = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+    
+    const newRequests: any[] = [];
+    staff.forEach((s: UserType) => {
+      const activeOrApprovedRequest = withdrawalRequests.find((r: any) => 
+        r.userId === s.id && 
+        r.reason.includes(`Salary Request: ${month}`) &&
+        (r.status === 'PENDING' || r.status === 'APPROVED')
+      );
+      if (activeOrApprovedRequest) return;
+
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      const advancesInCurrentPeriod = withdrawalRequests.filter((r: any) => 
+        r.userId === s.id && 
+        r.createdAt >= monthStart && 
+        !r.reason.includes('Salary Request') &&
+        (r.status === 'APPROVED' || r.status === 'PENDING')
+      );
+      
+      const totalAdvances = advancesInCurrentPeriod.reduce((acc: number, curr: any) => acc + curr.amount, 0);
+      const netSalary = Math.max(0, (s.salary || 0) - totalAdvances);
+
+      if (netSalary > 0 || (s.salary && s.salary > 0)) {
+        newRequests.push({
+          id: `SAL-${s.id}-${Date.now()}`,
+          userId: s.id,
+          userName: s.name,
+          amount: netSalary,
+          reason: `Salary Request: ${month}${totalAdvances > 0 ? ` (Advances deducted: ${settings.currencySymbol}${totalAdvances})` : ''}`,
+          status: 'PENDING',
+          createdAt: Date.now()
+        });
+      }
+    });
+
+    if (newRequests.length > 0) {
+      setWithdrawalRequests([...newRequests, ...withdrawalRequests]);
+      alert(`${newRequests.length} Salary Disbursement Requests Generated.`);
+    } else {
+      alert("No new salary requests needed for this period or a request is already active.");
+    }
   };
 
   const summaryData = useMemo(() => {
@@ -1215,6 +1317,7 @@ const AccountingView = ({ settings, entries, setEntries, withdrawalRequests }: a
         <div className="flex items-center gap-3">
           <div className="bg-white p-1 rounded-xl border border-gray-100 shadow-sm flex gap-1">
             <button onClick={() => setActiveTab('LOGS')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black transition-all ${activeTab === 'LOGS' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>Vouchers</button>
+            <button onClick={() => setActiveTab('REQUESTS')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black transition-all ${activeTab === 'REQUESTS' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>Requests</button>
             <button onClick={() => setActiveTab('SUMMARY')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black transition-all ${activeTab === 'SUMMARY' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>Summary</button>
           </div>
           {activeTab === 'LOGS' && (
@@ -1244,6 +1347,48 @@ const AccountingView = ({ settings, entries, setEntries, withdrawalRequests }: a
             </div>
           </div>
         </div>
+      ) : activeTab === 'REQUESTS' ? (
+        <div className="space-y-6 animate-in fade-in">
+           <div className="flex justify-between items-center bg-white p-6 rounded-3xl border border-blue-100 shadow-sm">
+              <div className="flex items-center gap-3">
+                 <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl"><Banknote size={24}/></div>
+                 <div>
+                    <h4 className="text-xs font-black text-gray-800 uppercase tracking-widest">Salary Management</h4>
+                    <p className="text-[9px] font-bold text-gray-400 uppercase">Automate salary disbursement with automatic deduction of advances.</p>
+                 </div>
+              </div>
+              <button onClick={generateSalaryRequests} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl active:scale-95 transition-all">
+                 <PlusCircle size={16}/> Run Salary Cycle
+              </button>
+           </div>
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {withdrawalRequests.filter((r: any) => r.status === 'PENDING').map((req: any) => (
+                 <div key={req.id} className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm flex flex-col gap-4">
+                    <div className="flex justify-between items-start">
+                       <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm shadow-inner">{req.userName.charAt(0)}</div>
+                          <div>
+                             <p className="text-sm font-black text-gray-800">{req.userName}</p>
+                             <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest">{new Date(req.createdAt).toLocaleDateString()}</p>
+                          </div>
+                       </div>
+                       <span className="text-lg font-black text-blue-600">{settings.currencySymbol}{req.amount.toLocaleString() || '0'}</span>
+                    </div>
+                    <p className="text-[10px] font-bold text-gray-500 bg-gray-50 p-3 rounded-xl border border-gray-100 leading-relaxed italic">"{req.reason}"</p>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                       <button onClick={() => approveRequest(req)} className="py-3 bg-emerald-600 text-white rounded-xl font-black text-[9px] uppercase tracking-widest active:scale-95 transition-all shadow-md">Approve</button>
+                       <button onClick={() => rejectRequest(req.id)} className="py-3 bg-gray-100 text-gray-500 rounded-xl font-black text-[9px] uppercase tracking-widest active:scale-95 transition-all">Reject</button>
+                    </div>
+                 </div>
+              ))}
+           </div>
+           {withdrawalRequests.filter((r: any) => r.status === 'PENDING').length === 0 && (
+              <div className="py-20 flex flex-col items-center justify-center opacity-20">
+                 <CheckCircle size={48}/>
+                 <p className="mt-4 font-black uppercase text-[10px] tracking-[0.3em]">No Pending Requests</p>
+              </div>
+           )}
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-in fade-in">
           {entries.map((e: any) => (
@@ -1264,7 +1409,6 @@ const AccountingView = ({ settings, entries, setEntries, withdrawalRequests }: a
           ))}
         </div>
       )}
-
       {isAddOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setIsAddOpen(false)} />
@@ -1298,7 +1442,9 @@ const CustomersView = ({ orders, settings }: any) => {
       const key = o.customerPhone || 'Anonymous';
       if (!map[key]) map[key] = { phone: key, name: o.customerName || 'Walk-in Patron', totalOrders: 0, totalSpend: 0, lastOrder: 0 };
       map[key].totalOrders += 1;
-      map[key].totalSpend += o.total;
+      if (o.status !== OrderStatus.CANCELLED) {
+        map[key].totalSpend += o.total;
+      }
       map[key].lastOrder = Math.max(map[key].lastOrder, o.createdAt);
     });
     return Object.values(map).sort((a, b) => b.totalSpend - a.totalSpend);
@@ -1355,6 +1501,9 @@ const MenuSetupView = ({ settings, categories, setCategories, menuItems, setMenu
     const selectedAddonIds = Array.from(formData.getAll('addOns') as string[]);
     const selectedBranchIds = Array.from(formData.getAll('allowedBranchIds') as string[]);
     
+    // Default to current selection or all if somehow empty
+    const finalBranchIds = selectedBranchIds.length > 0 ? selectedBranchIds : branches.map((b: Branch) => b.id);
+
     const branchPrices: BranchPriceOverride[] = [];
     branches.forEach((b: Branch) => {
       const branchPriceVal = formData.get(`price_${b.id}`) as string;
@@ -1370,7 +1519,7 @@ const MenuSetupView = ({ settings, categories, setCategories, menuItems, setMenu
       image: imagePreview || modal.data?.image || `https://picsum.photos/400/300?random=${Date.now()}`,
       description: formData.get('description') as string,
       addOns: selectedAddonIds,
-      allowedBranchIds: selectedBranchIds,
+      allowedBranchIds: finalBranchIds,
       branchPrices
     };
     if (modal.data) setMenuItems(menuItems.map((m: any) => m.id === modal.data.id ? { ...m, ...data } : m));
@@ -1382,12 +1531,31 @@ const MenuSetupView = ({ settings, categories, setCategories, menuItems, setMenu
   const saveAddon = (e: React.FormEvent) => {
     e.preventDefault();
     const formData = new FormData(e.target as HTMLFormElement);
+    
+    const branchPrices: BranchPriceOverride[] = [];
+    branches.forEach((b: Branch) => {
+      const branchPriceVal = formData.get(`price_${b.id}`) as string;
+      if (branchPriceVal && parseFloat(branchPriceVal) > 0) {
+        branchPrices.push({ branchId: b.id, price: parseFloat(branchPriceVal) });
+      }
+    });
+
     const data = {
       name: formData.get('name') as string,
-      price: parseFloat(formData.get('price') as string)
+      price: parseFloat(formData.get('price') as string),
+      branchPrices
     };
     if (modal.data) setAddons(addons.map((a: any) => a.id === modal.data.id ? { ...a, ...data } : a));
     else setAddons([...addons, { ...data, id: `a-${Date.now()}` }]);
+    setModal(null);
+  };
+
+  const saveCategory = (e: React.FormEvent) => {
+    e.preventDefault();
+    const formData = new FormData(e.target as HTMLFormElement);
+    const name = formData.get('name') as string;
+    if (modal.data) setCategories(categories.map((c: any) => c.id === modal.data.id ? { ...c, name } : c));
+    else setCategories([...categories, { id: `cat-${Date.now()}`, name }]);
     setModal(null);
   };
 
@@ -1440,25 +1608,36 @@ const MenuSetupView = ({ settings, categories, setCategories, menuItems, setMenu
                   <button onClick={() => setAddons(addons.filter((x:any)=>x.id!==a.id))} className="p-1.5 text-gray-300 hover:text-rose-500 rounded-lg transition-all"><Trash2 size={14}/></button>
                 </div>
               </div>
-              <span className="text-[10px] font-black text-blue-600">+{settings.currencySymbol}{a.price}</span>
+              <span className="text-[10px] font-black text-blue-600">Base: {settings.currencySymbol}{a.price}</span>
             </div>
           ))}
+          <button onClick={() => setModal({ type: 'add-addon', data: null })} className="bg-white p-6 rounded-[1.5rem] border-2 border-dashed border-gray-200 flex items-center justify-center gap-2 hover:bg-blue-50 hover:border-blue-300 transition-all">
+            <Plus size={20} className="text-gray-400"/>
+            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">New Add-on</span>
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {categories.map((cat: any) => (
             <div key={cat.id} className="bg-white p-6 rounded-[1.5rem] border border-gray-100 shadow-sm flex justify-between items-center group hover:shadow-lg transition-all">
               <span className="text-sm font-black text-gray-800">{cat.name}</span>
-              <button onClick={() => setCategories(categories.filter((c:any)=>c.id!==cat.id))} className="p-2.5 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={16}/></button>
+              <div className="flex gap-2">
+                <button onClick={() => setModal({ type: 'edit-cat', data: cat })} className="p-2.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit size={16}/></button>
+                <button onClick={() => setCategories(categories.filter((c:any)=>c.id!==cat.id))} className="p-2.5 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={16}/></button>
+              </div>
             </div>
           ))}
+          <button onClick={() => setModal({ type: 'add-cat', data: null })} className="bg-white p-6 rounded-[1.5rem] border-2 border-dashed border-gray-200 flex items-center justify-center gap-2 hover:bg-blue-50 hover:border-blue-300 transition-all">
+            <Plus size={20} className="text-gray-400"/>
+            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">New category</span>
+          </button>
         </div>
       )}
 
       {(modal?.type === 'add-item' || modal?.type === 'edit-item') && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[140] flex items-center justify-center p-4 overflow-y-auto no-scrollbar">
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => { setModal(null); setImagePreview(null); }} />
-          <form onSubmit={saveItem} className="bg-white rounded-[2.5rem] w-full max-w-lg relative z-10 p-6 md:p-10 space-y-6 shadow-2xl animate-in zoom-in max-h-[90vh] overflow-y-auto no-scrollbar border border-gray-100">
+          <form onSubmit={saveItem} className="bg-white rounded-[2.5rem] w-full max-w-lg relative z-10 p-6 md:p-10 space-y-6 shadow-2xl animate-in zoom-in border border-gray-100 my-auto">
              <div className="flex justify-between items-center mb-4">
                 <h3 className="text-2xl font-black uppercase tracking-widest">Offering Logic</h3>
                 <button type="button" onClick={() => { setModal(null); setImagePreview(null); }} className="p-2 hover:bg-gray-100 rounded-full transition-all"><X size={20}/></button>
@@ -1477,16 +1656,96 @@ const MenuSetupView = ({ settings, categories, setCategories, menuItems, setMenu
                 </button>
                 <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleImageChange}/>
              </div>
-             <div className="space-y-4">
+             <div className="space-y-4 max-h-[40vh] overflow-y-auto no-scrollbar pr-2">
                <input name="name" type="text" placeholder="Designation" defaultValue={modal.data?.name} className="w-full p-4 rounded-2xl bg-gray-50 border-none font-bold text-sm outline-none focus:ring-4 focus:ring-blue-50" required />
                <div className="grid grid-cols-2 gap-4">
-                 <input name="price" type="number" placeholder="0.00" defaultValue={modal.data?.price} className="w-full p-4 rounded-2xl bg-gray-50 border-none font-bold text-sm outline-none focus:ring-4 focus:ring-blue-50" required />
-                 <select name="category" className="w-full p-4 rounded-2xl bg-gray-50 border-none font-black text-xs outline-none focus:ring-4 focus:ring-blue-50">
-                   {categories.map((c:any) => <option key={c.id} value={c.name}>{c.name}</option>)}
-                 </select>
+                 <div>
+                   <label className="text-[9px] font-black text-gray-400 uppercase ml-4">Base Price</label>
+                   <input name="price" type="number" placeholder="0.00" defaultValue={modal.data?.price} className="w-full p-4 rounded-2xl bg-gray-50 border-none font-bold text-sm outline-none focus:ring-4 focus:ring-blue-50" required />
+                 </div>
+                 <div>
+                   <label className="text-[9px] font-black text-gray-400 uppercase ml-4">Taxonomy</label>
+                   <select name="category" className="w-full p-4 rounded-2xl bg-gray-50 border-none font-black text-xs outline-none focus:ring-4 focus:ring-blue-50">
+                     {categories.map((c:any) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                   </select>
+                 </div>
+               </div>
+               
+               <div className="space-y-2">
+                  <label className="text-[10px] font-black text-gray-400 uppercase ml-4 tracking-widest">Node Availability (POS Display)</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                    {branches.map((b: Branch) => (
+                      <label key={b.id} className="flex items-center gap-3 cursor-pointer p-1">
+                        <input 
+                          type="checkbox" 
+                          name="allowedBranchIds" 
+                          value={b.id} 
+                          defaultChecked={modal.data?.allowedBranchIds?.includes(b.id) || !modal.data} 
+                          className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                        />
+                        <span className="text-[10px] font-bold text-gray-700 uppercase truncate">{b.name}</span>
+                      </label>
+                    ))}
+                  </div>
+               </div>
+
+               <div className="space-y-2">
+                 <label className="text-[10px] font-black text-gray-400 uppercase ml-4 tracking-widest">Branch-Specific Overrides</label>
+                 <div className="space-y-2">
+                    {branches.map((b: Branch) => (
+                      <div key={b.id} className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                        <div className="flex-1">
+                          <p className="text-[9px] font-black text-gray-800 uppercase tracking-tighter truncate">{b.name}</p>
+                        </div>
+                        <input name={`price_${b.id}`} type="number" step="0.01" placeholder="Custom Price" defaultValue={modal.data?.branchPrices?.find((bp:any) => bp.branchId === b.id)?.price} className="w-28 p-2 rounded-lg bg-white border border-gray-200 text-xs font-bold outline-none"/>
+                      </div>
+                    ))}
+                 </div>
                </div>
              </div>
              <button type="submit" className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl text-[10px] uppercase tracking-[0.3em] shadow-xl hover:bg-blue-700 active:scale-95 transition-all">Settle Asset</button>
+          </form>
+        </div>
+      )}
+
+      {(modal?.type === 'add-addon' || modal?.type === 'edit-addon') && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setModal(null)} />
+          <form onSubmit={saveAddon} className="bg-white rounded-[2.5rem] w-full max-w-md relative z-10 p-8 space-y-6 shadow-2xl animate-in zoom-in border border-gray-100">
+             <div className="flex justify-between items-center">
+                <h3 className="text-xl font-black uppercase tracking-widest">Add-on Matrix</h3>
+                <button type="button" onClick={() => setModal(null)} className="p-2 hover:bg-gray-100 rounded-full transition-all"><X size={20}/></button>
+             </div>
+             <div className="space-y-4">
+                <input name="name" type="text" placeholder="Add-on Name" defaultValue={modal.data?.name} className="w-full p-4 rounded-2xl bg-gray-50 border-none font-bold text-sm outline-none focus:ring-4 focus:ring-blue-50" required />
+                <input name="price" type="number" placeholder="Base Price" defaultValue={modal.data?.price} className="w-full p-4 rounded-2xl bg-gray-50 border-none font-bold text-sm outline-none focus:ring-4 focus:ring-blue-50" required />
+                <div className="space-y-2">
+                   <label className="text-[10px] font-black text-gray-400 uppercase ml-4 tracking-widest">Branch Overrides</label>
+                   <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar">
+                      {branches.map((b: Branch) => (
+                        <div key={b.id} className="flex items-center gap-3 bg-gray-50 p-2 rounded-xl border border-gray-100">
+                           <span className="flex-1 text-[9px] font-black uppercase truncate">{b.name}</span>
+                           <input name={`price_${b.id}`} type="number" step="0.01" placeholder="Override" defaultValue={modal.data?.branchPrices?.find((bp:any) => bp.branchId === b.id)?.price} className="w-20 p-2 rounded-lg bg-white border border-gray-200 text-xs font-bold outline-none"/>
+                        </div>
+                      ))}
+                   </div>
+                </div>
+             </div>
+             <button type="submit" className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl text-[10px] uppercase tracking-widest shadow-xl active:scale-95 transition-all">Commit Add-on</button>
+          </form>
+        </div>
+      )}
+
+      {(modal?.type === 'add-cat' || modal?.type === 'edit-cat') && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setModal(null)} />
+          <form onSubmit={saveCategory} className="bg-white rounded-[2.5rem] w-full max-w-md relative z-10 p-8 space-y-6 shadow-2xl animate-in zoom-in border border-gray-100">
+             <div className="flex justify-between items-center">
+                <h3 className="text-xl font-black uppercase tracking-widest">Category Config</h3>
+                <button type="button" onClick={() => setModal(null)} className="p-2 hover:bg-gray-100 rounded-full transition-all"><X size={20}/></button>
+             </div>
+             <input name="name" type="text" placeholder="Category Name" defaultValue={modal.data?.name} className="w-full p-4 rounded-2xl bg-gray-50 border-none font-bold text-sm outline-none focus:ring-4 focus:ring-blue-50" required />
+             <button type="submit" className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl text-[10px] uppercase tracking-widest shadow-xl active:scale-95 transition-all">Commit Category</button>
           </form>
         </div>
       )}
@@ -1495,7 +1754,7 @@ const MenuSetupView = ({ settings, categories, setCategories, menuItems, setMenu
 };
 
 // --- Module: Staff Management ---
-const StaffManagementView = ({ staff, setStaff, branches, impersonateStaff, settings, withdrawalRequests, setWithdrawalRequests, accountingEntries, setAccountingEntries, addNotification, orders }: any) => {
+const StaffManagementView = ({ staff, setStaff, branches, impersonateStaff, settings }: any) => {
   const [modal, setModal] = useState<any>(null);
 
   const saveStaff = (e: React.FormEvent) => {
@@ -1503,62 +1762,22 @@ const StaffManagementView = ({ staff, setStaff, branches, impersonateStaff, sett
     const formData = new FormData(e.target as HTMLFormElement);
     const selectedBranchIds = Array.from(formData.getAll('branchIds') as string[]);
     const selectedPermissions = Array.from(formData.getAll('permissions') as string[]);
+    
     const data = {
       name: formData.get('name') as string,
       username: formData.get('username') as string,
       password: formData.get('password') as string,
       role: formData.get('role') as Role,
       assignedBranchIds: selectedBranchIds,
-      permissions: selectedPermissions,
       salary: parseFloat(formData.get('salary') as string) || 0,
       advanceLimit: parseFloat(formData.get('advanceLimit') as string) || 0,
-      walletBalance: parseFloat(formData.get('walletBalance') as string) || 0
+      walletBalance: parseFloat(formData.get('walletBalance') as string) || 0,
+      permissions: selectedPermissions
     };
+    
     if (modal.data) setStaff(staff.map((s: any) => s.id === modal.data.id ? { ...s, ...data } : s));
     else setStaff([...staff, { ...data, id: `u-${Date.now()}` }]);
     setModal(null);
-  };
-
-  const handleManualSalaryRequest = (targetStaff: UserType) => {
-    if (!confirm(`Generate early salary withdrawal request for ${targetStaff.name}?`)) return;
-    const newRequest: WithdrawalRequest = {
-      id: `SAL-REQ-${targetStaff.id}-${Date.now()}`,
-      userId: targetStaff.id,
-      userName: targetStaff.name,
-      amount: targetStaff.salary || 0,
-      reason: `Early Salary Withdrawal Request`,
-      status: 'PENDING',
-      createdAt: Date.now()
-    };
-    setWithdrawalRequests([newRequest, ...withdrawalRequests]);
-    addNotification('Manual Salary Request', `A manual salary withdrawal request was initiated for ${targetStaff.name}.`, 'INFO');
-  };
-
-  const handleRequestStatus = (requestId: string, newStatus: 'APPROVED' | 'REJECTED') => {
-    const request = withdrawalRequests.find((r: WithdrawalRequest) => r.id === requestId);
-    if (!request) return;
-    if (newStatus === 'APPROVED') {
-      const user = staff.find((s: UserType) => s.id === request.userId);
-      if (user) {
-        setStaff(staff.map((s: UserType) => 
-          s.id === user.id ? { ...s, walletBalance: (s.walletBalance || 0) + request.amount } : s
-        ));
-        const newEntry: AccountingEntry = {
-          id: `ADV-${Date.now()}`,
-          date: Date.now(),
-          description: `Salary Disbursement - ${user.name}`,
-          type: 'EXPENSE',
-          amount: request.amount,
-          category: 'Payroll',
-          branchId: user.assignedBranchIds[0] || 'b1'
-        };
-        setAccountingEntries([newEntry, ...accountingEntries]);
-        addNotification('Request Approved', `Request of ${settings.currencySymbol}${request.amount} for ${user.name} approved.`, 'SUCCESS');
-      }
-    }
-    setWithdrawalRequests(withdrawalRequests.map((r: WithdrawalRequest) => 
-      r.id === requestId ? { ...r, status: newStatus } : r
-    ));
   };
 
   return (
@@ -1573,18 +1792,108 @@ const StaffManagementView = ({ staff, setStaff, branches, impersonateStaff, sett
             <div className="flex justify-between items-start mb-8 relative z-10">
               <div className="w-16 h-16 rounded-[1.8rem] bg-blue-50 text-blue-600 flex items-center justify-center font-black text-2xl shadow-inner group-hover:bg-blue-600 group-hover:text-white transition-all duration-500">{s.name.charAt(0)}</div>
               <div className="flex gap-2">
-                 <button onClick={() => setModal({ type: 'edit', data: s })} className="p-2.5 text-gray-300 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit size={16}/></button>
-                 <button onClick={() => setStaff(staff.filter((x:any)=>x.id!==s.id))} className="p-2.5 text-gray-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={16}/></button>
+                 <button onClick={() => setModal({ type: 'edit', data: s })} className="p-2.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit size={16}/></button>
+                 <button onClick={() => setStaff(staff.filter((x:any)=>x.id!==s.id))} className="p-2.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={16}/></button>
               </div>
             </div>
             <h4 className="text-xl font-black text-gray-900 tracking-tight truncate">{s.name}</h4>
             <p className="text-[10px] text-blue-600 font-black uppercase tracking-widest">{s.role.replace('_', ' ')}</p>
-            <div className={`grid ${s.salary > 0 ? 'grid-cols-2' : 'grid-cols-1'} gap-2 mt-8`}>
-              <button onClick={() => impersonateStaff(s)} className="px-4 py-4 bg-gray-50 rounded-[1.2rem] text-[9px] font-black text-blue-600 hover:bg-blue-600 hover:text-white uppercase tracking-[0.2em] transition-all shadow-sm active:scale-95">Simulate</button>
+            <div className="mt-6 flex flex-col gap-2 border-t pt-4">
+               <div className="flex justify-between items-center">
+                  <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Base Salary</span>
+                  <span className="text-sm font-black text-gray-800">{settings.currencySymbol}{s.salary?.toLocaleString()}</span>
+               </div>
+               <div className="flex justify-between items-center">
+                  <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Advance Limit</span>
+                  <span className="text-sm font-black text-rose-500">{settings.currencySymbol}{s.advanceLimit?.toLocaleString()}</span>
+               </div>
+            </div>
+            <div className="mt-6">
+              <button onClick={() => impersonateStaff(s)} className="w-full px-4 py-3 bg-gray-50 rounded-[1.2rem] text-[9px] font-black text-blue-600 hover:bg-blue-600 hover:text-white uppercase tracking-[0.2em] transition-all shadow-sm active:scale-95">Simulate Terminal</button>
             </div>
           </div>
         ))}
       </div>
+      {(modal?.type === 'add' || modal?.type === 'edit') && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center p-4 overflow-y-auto no-scrollbar">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setModal(null)} />
+          <form onSubmit={saveStaff} className="bg-white rounded-[2.5rem] w-full max-lg relative z-10 p-6 md:p-10 space-y-5 shadow-2xl animate-in zoom-in border border-gray-100 my-auto">
+             <div className="flex justify-between items-center mb-2">
+                <h3 className="text-xl font-black uppercase tracking-widest">Staff Matrix Logic</h3>
+                <button type="button" onClick={() => setModal(null)} className="p-2 hover:bg-gray-100 rounded-full transition-all"><X size={20}/></button>
+             </div>
+             <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black text-gray-400 uppercase ml-4">Full Name</label>
+                      <input name="name" type="text" placeholder="John Doe" defaultValue={modal.data?.name} className="w-full p-3 rounded-xl bg-gray-50 border-none font-bold text-sm outline-none focus:ring-2 focus:ring-blue-100" required />
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black text-gray-400 uppercase ml-4">Base Role Reference</label>
+                      <select name="role" defaultValue={modal.data?.role || Role.CASHIER} className="w-full p-3 rounded-xl bg-gray-50 border-none font-black text-[10px] uppercase outline-none focus:ring-2 focus:ring-blue-100">
+                         {Object.values(Role).map(r => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
+                      </select>
+                   </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black text-gray-400 uppercase ml-4">Username</label>
+                      <input name="username" type="text" defaultValue={modal.data?.username} className="w-full p-3 rounded-xl bg-gray-50 border-none font-bold text-sm outline-none focus:ring-2 focus:ring-blue-100" required />
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black text-gray-400 uppercase ml-4">Access Secret</label>
+                      <input name="password" type="password" defaultValue={modal.data?.password} className="w-full p-3 rounded-xl bg-gray-50 border-none font-bold text-sm outline-none focus:ring-2 focus:ring-blue-100" required />
+                   </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black text-gray-400 uppercase ml-4">Salary Allocation</label>
+                      <input name="salary" type="number" defaultValue={modal.data?.salary} className="w-full p-3 rounded-xl bg-gray-50 border-none font-bold text-sm outline-none focus:ring-2 focus:ring-blue-100" required />
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[9px] font-black text-gray-400 uppercase ml-4">Advance Threshold</label>
+                      <input name="advanceLimit" type="number" defaultValue={modal.data?.advanceLimit} className="w-full p-3 rounded-xl bg-gray-50 border-none font-bold text-sm outline-none focus:ring-2 focus:ring-blue-100" required />
+                   </div>
+                </div>
+                <div className="space-y-2">
+                   <label className="text-[10px] font-black text-gray-400 uppercase ml-4 tracking-widest">Custom Permission Set (Menu Access)</label>
+                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-32 overflow-y-auto no-scrollbar bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                      {NAV_ITEMS.map((item) => (
+                        <label key={item.id} className="flex items-center gap-2 cursor-pointer">
+                           <input 
+                            type="checkbox" 
+                            name="permissions" 
+                            value={item.id} 
+                            defaultChecked={modal.data?.permissions?.includes(item.id) || (!modal.data && ['dashboard', 'pos'].includes(item.id))} 
+                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                           />
+                           <span className="text-[9px] font-bold text-gray-600 uppercase truncate">{item.label}</span>
+                        </label>
+                      ))}
+                   </div>
+                </div>
+                <div className="space-y-2">
+                   <label className="text-[10px] font-black text-gray-400 uppercase ml-4 tracking-widest">Branch Node Permissions</label>
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-32 overflow-y-auto no-scrollbar bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                      {branches.map((b: Branch) => (
+                        <label key={b.id} className="flex items-center gap-3 cursor-pointer">
+                           <input 
+                            type="checkbox" 
+                            name="branchIds" 
+                            value={b.id} 
+                            defaultChecked={modal.data?.assignedBranchIds?.includes(b.id)} 
+                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                           />
+                           <span className="text-[10px] font-bold text-gray-700 uppercase truncate">{b.name}</span>
+                        </label>
+                      ))}
+                   </div>
+                </div>
+             </div>
+             <button type="submit" className="w-full py-4 bg-blue-600 text-white font-black rounded-2xl text-[10px] uppercase tracking-widest shadow-xl active:scale-95 transition-all mt-2">Commit Personnel Profile</button>
+          </form>
+        </div>
+      )}
     </div>
   );
 };
@@ -1609,12 +1918,10 @@ const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen, settings, current
             </div>
           </div>
         </div>
-
         <nav className="flex-1 overflow-y-auto px-4 py-4 no-scrollbar space-y-1">
           {NAV_ITEMS.map((item) => {
             const hasAccess = currentUser.role === Role.SUPER_ADMIN || !currentUser.permissions || currentUser.permissions.includes(item.id);
             if (!hasAccess) return null;
-
             return (
               <button
                 key={item.id}
@@ -1630,7 +1937,6 @@ const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen, settings, current
             );
           })}
         </nav>
-
         <div className="p-4 border-t border-gray-50 shrink-0">
           <button 
             onClick={onLogout}
@@ -1646,7 +1952,7 @@ const Sidebar = ({ activeTab, setActiveTab, isOpen, setIsOpen, settings, current
 };
 
 // --- Component: Header ---
-const Header = ({ title, toggleSidebar, activeBranch, setActiveBranch, branches, currentUser, isSimulating, onStopSimulating, notifications, markAllRead }: any) => {
+const Header = ({ title, toggleSidebar, activeBranch, setActiveBranch, branches, currentUser, notifications, markAllRead }: any) => {
   const [showNotifs, setShowNotifs] = useState(false);
   const unreadCount = notifications ? notifications.filter((n: any) => !n.read).length : 0;
 
@@ -1664,7 +1970,6 @@ const Header = ({ title, toggleSidebar, activeBranch, setActiveBranch, branches,
           </div>
         </div>
       </div>
-
       <div className="flex items-center gap-3 md:gap-6">
         <div className="hidden sm:flex items-center bg-gray-50 rounded-2xl px-3 py-1.5 border border-gray-100">
           <Building2 size={16} className="text-gray-400 mr-2" />
@@ -1681,7 +1986,6 @@ const Header = ({ title, toggleSidebar, activeBranch, setActiveBranch, branches,
             ))}
           </select>
         </div>
-
         <div className="relative">
           <button 
             onClick={() => { setShowNotifs(!showNotifs); if (!showNotifs) markAllRead(); }}
@@ -1691,7 +1995,6 @@ const Header = ({ title, toggleSidebar, activeBranch, setActiveBranch, branches,
             {unreadCount > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full border-2 border-white" />}
           </button>
         </div>
-
         <div className="w-10 h-10 md:w-12 md:h-12 rounded-[1rem] md:rounded-[1.2rem] bg-blue-50 text-blue-600 flex items-center justify-center font-black shadow-inner text-sm">
           {currentUser.name.charAt(0)}
         </div>
@@ -1701,7 +2004,7 @@ const Header = ({ title, toggleSidebar, activeBranch, setActiveBranch, branches,
 };
 
 // --- Module: Reports View ---
-const ReportsView = ({ orders, branches, stockItems, settings }: any) => {
+const ReportsView = ({ orders, branches, settings }: any) => {
   const [filterBranchId, setFilterBranchId] = useState('ALL');
   const [filterFrequency, setFilterFrequency] = useState('DAILY');
   const [startDate, setStartDate] = useState('');
@@ -1714,7 +2017,7 @@ const ReportsView = ({ orders, branches, stockItems, settings }: any) => {
   const branchFinancialReport = useMemo(() => {
     const branchesToShow = filterBranchId === 'ALL' ? branches : branches.filter((b: any) => b.id === filterBranchId);
     return branchesToShow.map((b: Branch) => {
-      const branchOrders = filteredOrders.filter((o: Order) => o.branchId === b.id);
+      const branchOrders = filteredOrders.filter((o: Order) => o.branchId === b.id && o.status !== OrderStatus.CANCELLED);
       const revenue = branchOrders.reduce((acc: number, o: Order) => acc + o.total, 0);
       const margin = b.profitMargin || 0;
       return { 
@@ -1732,7 +2035,6 @@ const ReportsView = ({ orders, branches, stockItems, settings }: any) => {
       <div className="flex justify-between items-center">
         <h3 className="text-xl md:text-2xl font-black text-gray-800 uppercase tracking-widest">Forensic Intelligence</h3>
       </div>
-
       <GlobalFilterBar 
         branches={branches}
         filterBranchId={filterBranchId}
@@ -1744,7 +2046,6 @@ const ReportsView = ({ orders, branches, stockItems, settings }: any) => {
         endDate={endDate}
         setEndDate={setEndDate}
       />
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="bg-white p-6 md:p-10 rounded-[3rem] border border-gray-100 shadow-sm">
           <h4 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-8">Node Revenue Distribution</h4>
@@ -1778,37 +2079,99 @@ const BranchManagementView = ({ branches, setBranches }: any) => {
       address: formData.get('address') as string,
       profitMargin: parseFloat(formData.get('profitMargin') as string) || 0
     };
-    if (modal.data) setBranches(branches.map((b: any) => b.id === modal.data.id ? { ...b, ...data } : b));
-    else setBranches([...branches, { ...data, id: `b-${Date.now()}` }]);
+    if (modal && modal.data) {
+      setBranches(branches.map((b: any) => b.id === modal.data.id ? { ...b, ...data } : b));
+    } else {
+      setBranches([...branches, { ...data, id: `b-${Date.now()}` }]);
+    }
     setModal(null);
+  };
+
+  const deleteBranch = (id: string) => {
+    if (confirm('Are you sure you want to delete this branch?')) {
+      setBranches(branches.filter((b: any) => b.id !== id));
+    }
   };
 
   return (
     <div className="p-4 lg:p-8 space-y-6 h-full overflow-y-auto pb-32 no-scrollbar bg-gray-50/20">
       <div className="flex justify-between items-center">
         <h3 className="text-xl md:text-2xl font-black text-gray-800 uppercase tracking-widest">Global Nodes</h3>
-        <button onClick={() => setModal({ type: 'add', data: null })} className="p-3 bg-blue-600 text-white rounded-2xl shadow-xl"><Plus size={20}/></button>
+        <button onClick={() => setModal({ type: 'add', data: null })} className="p-3 bg-blue-600 text-white rounded-2xl shadow-xl transition-all hover:scale-110 active:scale-95">
+          <Plus size={24}/>
+        </button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
         {branches.map((b: any) => (
-          <div key={b.id} className="bg-white p-7 rounded-[2.5rem] border border-gray-100 shadow-sm flex flex-col justify-between hover:shadow-xl transition-all">
+          <div key={b.id} className="bg-white p-7 rounded-[2.5rem] border border-gray-100 shadow-sm flex flex-col justify-between hover:shadow-xl transition-all group relative overflow-hidden">
             <div className="flex justify-between items-start mb-6">
               <div className={`p-4 rounded-[1.5rem] ${b.type === BranchType.RESTAURANT ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'} shadow-inner`}>
-                {b.type === BranchType.RESTAURANT ? <Home size={24}/> : <Coffee size={24}/>}
+                {b.type === BranchType.RESTAURANT ? <Home size={28}/> : <Coffee size={28}/>}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setModal({ type: 'edit', data: b })} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit size={18}/></button>
+                <button onClick={() => deleteBranch(b.id)} className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={18}/></button>
               </div>
             </div>
             <div>
-              <h4 className="text-xl font-black text-gray-900 tracking-tight truncate">{b.name}</h4>
-              <p className="text-[10px] text-gray-400 font-black uppercase tracking-[0.2em]">{b.type.replace('_', ' ')}</p>
+              <h4 className="text-xl font-black text-gray-900 tracking-tight truncate leading-none">{b.name}</h4>
+              <p className="text-[10px] text-gray-400 font-black uppercase tracking-[0.2em] mt-2">{b.type.replace('_', ' ')}</p>
+              <div className="mt-6 flex items-center gap-4 border-t pt-4">
+                <div>
+                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Profit Margin</p>
+                  <p className="text-sm font-black text-blue-600">{b.profitMargin || 0}%</p>
+                </div>
+                <div className="flex-1">
+                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Address</p>
+                  <p className="text-[10px] font-bold text-gray-500 truncate">{b.address}</p>
+                </div>
+              </div>
             </div>
           </div>
         ))}
       </div>
+      {modal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setModal(null)} />
+          <form onSubmit={saveBranch} className="bg-white rounded-[2.5rem] w-full max-w-md relative z-10 p-8 md:p-10 space-y-5 shadow-2xl animate-in zoom-in border border-gray-100">
+             <div className="flex justify-between items-center mb-2">
+                <h3 className="text-2xl font-black uppercase tracking-widest text-gray-900">{modal.type === 'edit' ? 'Update Branch' : 'Add New Branch'}</h3>
+                <button type="button" onClick={() => setModal(null)} className="p-2 hover:bg-gray-100 rounded-full transition-all"><X size={24}/></button>
+             </div>
+             <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4">Branch Name</label>
+                  <input name="name" type="text" placeholder="e.g. Gulshan Outlet" defaultValue={modal.data?.name} className="w-full p-4 rounded-2xl bg-gray-50 border-none font-bold text-sm outline-none focus:ring-4 focus:ring-blue-50" required />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4">Type</label>
+                    <select name="type" defaultValue={modal.data?.type || BranchType.RESTAURANT} className="w-full p-4 rounded-2xl bg-gray-50 border-none font-black text-[10px] outline-none focus:ring-4 focus:ring-blue-50 uppercase tracking-widest">
+                      <option value={BranchType.RESTAURANT}>Restaurant</option>
+                      <option value={BranchType.FOOD_CART}>Food Cart</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4">Profit Margin (%)</label>
+                    <input name="profitMargin" type="number" placeholder="40" defaultValue={modal.data?.profitMargin} className="w-full p-4 rounded-2xl bg-gray-50 border-none font-bold text-sm outline-none focus:ring-4 focus:ring-blue-50" required />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-4">Address</label>
+                  <textarea name="address" placeholder="Full address details..." defaultValue={modal.data?.address} className="w-full p-4 rounded-2xl bg-gray-50 border-none font-bold text-sm outline-none h-24 focus:ring-4 focus:ring-blue-50 resize-none" required />
+                </div>
+             </div>
+             <button type="submit" className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl text-[11px] uppercase tracking-[0.2em] shadow-xl hover:bg-blue-700 active:scale-95 transition-all mt-4">
+               {modal.type === 'edit' ? 'Update Node' : 'Initialize Node'}
+             </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 };
 
-// --- Module: Settings View (Updated for Live Readiness) ---
+// --- Module: Settings View ---
 const SettingsView = ({ 
   settings, setSettings,
   branches, setBranches,
@@ -1821,13 +2184,8 @@ const SettingsView = ({
   addons, setAddons,
   withdrawalRequests, setWithdrawalRequests
 }: any) => {
-  
   const handleExport = () => {
-    const data = {
-      settings, branches, orders, accountingEntries, staff, menuItems, stockItems, categories, addons, withdrawalRequests,
-      exportDate: new Date().toISOString(),
-      version: "1.0.Enterprise"
-    };
+    const data = { settings, branches, orders, accountingEntries, staff, menuItems, stockItems, categories, addons, withdrawalRequests, exportDate: new Date().toISOString(), version: "1.3.Enterprise" };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1845,7 +2203,6 @@ const SettingsView = ({
       try {
         const data = JSON.parse(event.target?.result as string);
         if (!confirm("This will overwrite ALL current local data. Continue?")) return;
-        
         if(data.settings) setSettings(data.settings);
         if(data.branches) setBranches(data.branches);
         if(data.orders) setOrders(data.orders);
@@ -1856,11 +2213,10 @@ const SettingsView = ({
         if(data.categories) setCategories(data.categories);
         if(data.addons) setAddons(data.addons);
         if(data.withdrawalRequests) setWithdrawalRequests(data.withdrawalRequests);
-        
         alert("System State Restored Successfully.");
         window.location.reload();
       } catch (err) {
-        alert("Invalid Backup File. Please check format.");
+        alert("Invalid Backup File.");
       }
     };
     reader.readAsText(file);
@@ -1881,7 +2237,6 @@ const SettingsView = ({
            </div>
         </div>
       </div>
-
       <div className="bg-gradient-to-br from-gray-900 to-black p-8 md:p-12 rounded-[3.5rem] text-white shadow-2xl">
         <div className="flex items-center gap-4 mb-8">
            <div className="p-4 bg-white/10 rounded-2xl"><Database size={24} className="text-blue-400" /></div>
@@ -1891,15 +2246,10 @@ const SettingsView = ({
            </div>
         </div>
         <p className="text-sm text-gray-400 mb-8 max-w-md leading-relaxed">
-          As a local-first system, your data is stored securely in this browser. Before going live, ensure you have a backup strategy.
+          Your data is stored locally. Ensure you backup your data regularly to prevent loss.
         </p>
         <div className="flex flex-wrap gap-4">
-           <button 
-             onClick={handleExport}
-             className="flex items-center gap-3 px-8 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all active:scale-95"
-           >
-             <Save size={16}/> Full System Backup
-           </button>
+           <button onClick={handleExport} className="flex items-center gap-3 px-8 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all active:scale-95"><Save size={16}/> Full System Backup</button>
            <label className="flex items-center gap-3 px-8 py-4 bg-white/10 border border-white/10 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-white/20 transition-all active:scale-95 cursor-pointer">
              <UploadCloud size={16}/> Restore System
              <input type="file" className="hidden" accept=".json" onChange={handleImport} />
@@ -1921,15 +2271,7 @@ export default function App() {
   const [withdrawalRequests, setWithdrawalRequests] = usePersistentState('withdrawal-requests', []);
   const [accountingEntries, setAccountingEntries] = usePersistentState('accounting-records', []);
   const [staff, setStaff] = usePersistentState('staff-list', [
-    { 
-      id: 'admin-1', 
-      name: 'Super Admin', 
-      role: Role.SUPER_ADMIN, 
-      assignedBranchIds: MOCK_BRANCHES.map(b => b.id), 
-      username: 'admin', 
-      password: 'password', 
-      permissions: NAV_ITEMS.map(n => n.id) 
-    }
+    { id: 'admin-1', name: 'Super Admin', role: Role.SUPER_ADMIN, assignedBranchIds: MOCK_BRANCHES.map(b => b.id), username: 'admin', password: 'password', permissions: NAV_ITEMS.map(n => n.id), salary: 50000, advanceLimit: 10000, walletBalance: 0 }
   ]);
   const [categories, setCategories] = usePersistentState('app-categories', INITIAL_CATEGORIES);
   const [menuItems, setMenuItems] = usePersistentState('menu-items', MOCK_MENU_ITEMS);
@@ -1950,7 +2292,7 @@ export default function App() {
 
   const addOrder = (order: Order) => {
     setOrders([order, ...orders]);
-    const newEntry: AccountingEntry = { id: `INC-${Date.now()}`, date: Date.now(), description: `Sales - Order #${order.id.split('-')[1]}`, type: 'INCOME', amount: order.total, category: 'Sales', branchId: order.branchId };
+    const newEntry: AccountingEntry = { id: `INC-${Date.now()}`, date: Date.now(), description: `Sales - Order #${order.id.split('-')[1]} (${order.paymentMethod || 'CASH'})`, type: 'INCOME', amount: order.total, category: 'Sales', branchId: order.branchId };
     setAccountingEntries((prev: AccountingEntry[]) => [newEntry, ...prev]);
   };
   
@@ -1988,27 +2330,16 @@ export default function App() {
     switch (activeTab) {
       case 'dashboard': return <DashboardView orders={orders} settings={settings} branches={branches} currentUser={currentUser} />;
       case 'pos': return <POSView branch={activeBranch} settings={settings} addOrder={addOrder} categories={categories} menuItems={menuItems} allAddons={addons} orders={orders} />;
-      case 'orders': return <OrderHistoryView orders={orders} setOrders={setOrders} settings={settings} branches={branches} />;
+      case 'orders': return <OrderHistoryView orders={orders} setOrders={setOrders} settings={settings} branches={branches} setAccountingEntries={setAccountingEntries} />;
       case 'wallet': return <WalletView currentUser={currentUser} withdrawalRequests={withdrawalRequests} setWithdrawalRequests={setWithdrawalRequests} settings={settings} addNotification={addNotification} />;
       case 'branches': return <BranchManagementView branches={branches} setBranches={setBranches} />;
       case 'inventory': return <InventoryView settings={settings} stockItems={stockItems} setStockItems={setStockItems} />;
       case 'menu': return <MenuSetupView settings={settings} categories={categories} setCategories={setCategories} menuItems={menuItems} setMenuItems={setMenuItems} addons={addons} setAddons={setAddons} branches={branches} />;
       case 'customers': return <CustomersView orders={orders} settings={settings} />;
       case 'staff': return <StaffManagementView staff={staff} setStaff={setStaff} branches={branches} impersonateStaff={impersonateStaff} settings={settings} withdrawalRequests={withdrawalRequests} setWithdrawalRequests={setWithdrawalRequests} accountingEntries={accountingEntries} setAccountingEntries={setAccountingEntries} addNotification={addNotification} orders={orders} />;
-      case 'accounting': return <AccountingView settings={settings} entries={accountingEntries} setEntries={setAccountingEntries} withdrawalRequests={withdrawalRequests} />;
+      case 'accounting': return <AccountingView settings={settings} entries={accountingEntries} setEntries={setAccountingEntries} withdrawalRequests={withdrawalRequests} setWithdrawalRequests={setWithdrawalRequests} staff={staff} />;
       case 'reports': return <ReportsView orders={orders} branches={branches} stockItems={stockItems} settings={settings} />;
-      case 'settings': return <SettingsView 
-        settings={settings} setSettings={setSettings}
-        branches={branches} setBranches={setBranches}
-        orders={orders} setOrders={setOrders}
-        accountingEntries={accountingEntries} setAccountingEntries={setAccountingEntries}
-        staff={staff} setStaff={setStaff}
-        menuItems={menuItems} setMenuItems={setMenuItems}
-        stockItems={stockItems} setStockItems={setStockItems}
-        categories={categories} setCategories={setCategories}
-        addons={addons} setAddons={setAddons}
-        withdrawalRequests={withdrawalRequests} setWithdrawalRequests={setWithdrawalRequests}
-      />;
+      case 'settings': return <SettingsView settings={settings} setSettings={setSettings} branches={branches} setBranches={setBranches} orders={orders} setOrders={setOrders} accountingEntries={accountingEntries} setAccountingEntries={setAccountingEntries} staff={staff} setStaff={setStaff} menuItems={menuItems} setMenuItems={setMenuItems} stockItems={stockItems} setStockItems={setStockItems} categories={categories} setCategories={setCategories} addons={addons} setAddons={setAddons} withdrawalRequests={withdrawalRequests} setWithdrawalRequests={setWithdrawalRequests} />;
       default: return <DashboardView orders={orders} settings={settings} branches={branches} currentUser={currentUser} />;
     }
   };
@@ -2017,7 +2348,7 @@ export default function App() {
     <div className="h-screen w-full bg-gray-50 flex overflow-hidden selection:bg-blue-100 selection:text-blue-900">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} settings={settings} currentUser={currentUser} onLogout={() => stopImpersonating()} />
       <main className="flex-1 lg:pl-64 flex flex-col h-full transition-all duration-300 relative overflow-hidden">
-        <Header title={NAV_ITEMS.find(n => n.id === activeTab)?.label} toggleSidebar={toggleSidebar} activeBranch={activeBranch} setActiveBranch={setActiveBranch} branches={branches} currentUser={currentUser} isSimulating={!!originalAdmin} onStopSimulating={stopImpersonating} notifications={notifications} markAllRead={markAllRead} />
+        <Header title={NAV_ITEMS.find(n => n.id === activeTab)?.label} toggleSidebar={toggleSidebar} activeBranch={activeBranch} setActiveBranch={setActiveBranch} branches={branches} currentUser={currentUser} notifications={notifications} markAllRead={markAllRead} />
         <div className="flex-1 overflow-hidden relative h-full">{renderContent()}</div>
       </main>
       <div className="fixed bottom-0 left-0 w-full lg:hidden bg-white/80 backdrop-blur-xl border-t px-6 py-2 flex justify-around items-center shadow-2xl z-40">
